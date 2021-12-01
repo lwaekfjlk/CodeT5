@@ -13,6 +13,8 @@ def add_lang_by_task(target_str, task, sub_task):
             target_str = '<java> ' + target_str
     elif task == 'concode':
         target_str = '<java> ' + target_str
+    elif task == 'conala':
+        target_str = '<python> ' + target_str
     elif task == 'defect':
         target_str = target_str
     return target_str
@@ -222,6 +224,26 @@ def read_concode_examples(filename, data_num):
                     idx=idx,
                     source=x["nl"].strip(),
                     target=x["code"].strip()
+                )
+            )
+            idx += 1
+            if idx == data_num:
+                break
+    return examples
+
+
+def read_conala_examples(filename, data_num):
+    """Read examples from conala filename."""
+    examples = []
+
+    with open(filename) as f:
+        data_dict = json.load(f)
+        for idx, ex in enumerate(data_dict):
+            examples.append(
+                Example(
+                    idx=idx,
+                    source=ex["rewritten_intent"].strip() if ex["rewritten_intent"] else ex['intent'].strip(),
+                    target=ex["snippet"].strip()
                 )
             )
             idx += 1

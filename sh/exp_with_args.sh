@@ -1,4 +1,4 @@
-WORKDIR="path_to_your_dir/CodeT5"
+WORKDIR="/home/fangzhex/md/projects/CodeT5"
 export PYTHONPATH=$WORKDIR
 
 TASK=${1}

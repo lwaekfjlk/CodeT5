@@ -106,6 +106,12 @@ def get_filenames(data_root, task, sub_task, split=''):
         train_fn = '{}/train.json'.format(data_dir)
         dev_fn = '{}/dev.json'.format(data_dir)
         test_fn = '{}/test.json'.format(data_dir)
+    elif task == 'conala':
+        data_dir = '{}/{}'.format(data_root, task)
+        train_fn = '{}/conala-train.json'.format(data_dir)
+        dev_fn = '{}/conala-test.json'.format(data_dir)
+        test_fn = '{}/conala-test.json'.format(data_dir)
+
     elif task == 'summarize':
         data_dir = '{}/{}/{}'.format(data_root, task, sub_task)
         train_fn = '{}/train.jsonl'.format(data_dir)
@@ -152,6 +158,7 @@ def read_examples(filename, data_num, task):
         'refine': read_refine_examples,
         'translate': read_translate_examples,
         'concode': read_concode_examples,
+        'conala': read_conala_examples,
         'clone': read_clone_examples,
         'defect': read_defect_examples,
     }

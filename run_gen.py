@@ -147,6 +147,8 @@ def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag,
         if args.task == 'summarize':
             (goldMap, predictionMap) = smooth_bleu.computeMaps(predictions, gold_fn)
             bleu = round(smooth_bleu.bleuFromMaps(goldMap, predictionMap)[0], 2)
+        elif args.task == 'conala':
+            bleu = round(_bleu(gold_fn, output_fn, smooth=False, code_tokenize=True), 2)
         else:
             bleu = round(_bleu(gold_fn, output_fn), 2)
             if args.task in ['concode', 'translate', 'refine']:

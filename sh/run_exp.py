@@ -50,6 +50,13 @@ def get_args_by_task_model(task, sub_task, model_tag):
         trg_len = 150
         epoch = 30
         patience = 3
+    elif task == 'conala':
+        # Read 2379 examples, avg src len: 10, avg trg len: 4, max src len: 32, max trg len: 29
+        # [TOKENIZE] avg src len: 15, avg trg len: 16, max src len: 62, max trg len: 84
+        src_len = 60
+        trg_len = 100
+        epoch = 30
+        patience = 3
     elif task == 'defect':
         # Read 21854 examples, avg src len: 187, avg trg len: 1, max src len: 12195, max trg len: 1
         # [TOKENIZE] avg src len: 597, avg trg len: 1, max src len: 41447, max trg len: 1
@@ -85,6 +92,8 @@ def get_args_by_task_model(task, sub_task, model_tag):
     lr = 5
     if task == 'concode':
         lr = 10
+    elif task == 'conala':
+        lr = 5
     elif task == 'defect':
         lr = 2
     return bs, lr, src_len, trg_len, patience, epoch
@@ -109,7 +118,7 @@ def get_sub_tasks(task):
         sub_tasks = ['java-cs', 'cs-java']
     elif task == 'refine':
         sub_tasks = ['small', 'medium']
-    elif task in ['concode', 'defect', 'clone']:
+    elif task in ['concode', 'defect', 'clone', 'conala']:
         sub_tasks = ['none']
     return sub_tasks
 
@@ -118,7 +127,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_tag", type=str, default='codet5_small',
                         choices=['roberta', 'codebert', 'bart_base', 'codet5_small', 'codet5_base'])
-    parser.add_argument("--task", type=str, default='summarize', choices=['summarize', 'concode', 'translate',
+    parser.add_argument("--task", type=str, default='summarize', choices=['summarize', 'concode', 'conala', 'translate',
                                                                           'refine', 'defect', 'clone'])
     parser.add_argument("--sub_task", type=str, default='ruby')
     parser.add_argument("--res_dir", type=str, default='results', help='directory to save fine-tuning results')
