@@ -133,6 +133,8 @@ def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag,
         dev_accs, predictions = [], []
         with open(output_fn, 'w') as f, open(gold_fn, 'w') as f1, open(src_fn, 'w') as f2:
             for pred_nl, gold in zip(pred_nls, eval_examples):
+                pred_nl = pred_nl.replace('\n', ' ')
+                gold.target = gold.target.replace('\n', ' ')
                 dev_accs.append(pred_nl.strip() == gold.target.strip())
                 if args.task in ['summarize']:
                     predictions.append(str(gold.idx) + '\t' + pred_nl)
