@@ -9,11 +9,11 @@ logger = logging.getLogger(__name__)
 
 def add_args(parser):
     parser.add_argument("--task", type=str, required=True,
-                        choices=['summarize', 'concode', 'conala', 'translate', 'refine', 'defect', 'clone'])
+                        choices=['summarize', 'concode', 'conala', 'conala_brio', 'translate', 'refine', 'defect', 'clone'])
     parser.add_argument("--sub_task", type=str, default='')
     parser.add_argument("--lang", type=str, default='')
     parser.add_argument("--eval_task", type=str, default='')
-    parser.add_argument("--model_type", default="codet5", type=str, choices=['roberta', 'bart', 'codet5'])
+    parser.add_argument("--model_type", default="codet5", type=str, choices=['roberta', 'bart', 'codet5', 'codet5_brio'])
     parser.add_argument("--add_lang_ids", action='store_true')
     parser.add_argument("--data_num", default=-1, type=int)
     parser.add_argument("--start_epoch", default=0, type=int)
@@ -98,6 +98,21 @@ def add_args(parser):
                         help="For distributed training: local_rank")
     parser.add_argument('--seed', type=int, default=1234,
                         help="random seed for initialization")
+
+    # BRIO setting
+    parser.add_argument("--normalize", action="store_true")
+    parser.add_argument("--length_penalty", default=1.0, type=float)
+    parser.add_argument("--adding", default=0, type=float)
+    parser.add_argument("--ranking_weight", default=1, type=float)
+    parser.add_argument("--generation_weight", default=1, type=float)
+    parser.add_argument("--require_gold", action="store_true")
+    parser.add_argument("--scale", default=0.01, type=float)
+    parser.add_argument("--margin", default=0.001, type=float)
+    parser.add_argument("--gold_margin", default=0, type=float)
+    parser.add_argument("--gold_weight", default=0, type=float)
+    parser.add_argument("--score_mode", default='log', type=str)
+    parser.add_argument("--ce_smooth", default=0, type=float)
+
     args = parser.parse_args()
 
     if args.task in ['summarize']:
@@ -108,6 +123,19 @@ def add_args(parser):
         args.lang = 'c'
     elif args.task == 'translate':
         args.lang = 'c_sharp' if args.sub_task == 'java-cs' else 'java'
+    elif 'conala' in args.task:
+        args.gradient_accumulation_steps = 8
+    elif 'brio' in args.task:
+        args.gold_margin = 0
+        args.margin = 0.001
+        args.gold_weight = 0
+        args.generation_weight = 0.1
+        args.ranking_weight = 10
+        args.scale = 0.1
+        args.ce_smooth = 0.1
+
+
+    args.load_model_path = '/home/haofeiy/CodeGen/origin_codet5/CodeT5/sh/saved_models/conala/codet5_small_all_lr5_bs4_src60_trg100_pat3_e30_saved/checkpoint-best-bleu/pytorch_model.bin'
     return args
 
 

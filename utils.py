@@ -41,7 +41,7 @@ def load_and_cache_gen_data(args, filename, pool, tokenizer, split_tag, only_src
             data = TensorDataset(all_source_ids)
         else:
             all_target_ids = torch.tensor([f.target_ids for f in features], dtype=torch.long)
-            data = TensorDataset(all_source_ids, all_target_ids)
+            data = TensorDataset(all_source_ids, all_target_ids) # shape [data_num, candidate_num, length]
         if args.local_rank in [-1, 0] and not is_sample:
             torch.save(data, cache_fn)
     return examples, data
@@ -111,7 +111,11 @@ def get_filenames(data_root, task, sub_task, split=''):
         train_fn = '{}/conala-train.json'.format(data_dir)
         dev_fn = '{}/conala-test.json'.format(data_dir)
         test_fn = '{}/conala-test.json'.format(data_dir)
-
+    elif task == 'conala_brio':
+        data_dir = '{}/{}'.format(data_root, task)
+        train_fn = '{}/conala_train_brio.json'.format(data_dir)
+        dev_fn = '{}/conala_test_brio.json'.format(data_dir)
+        test_fn = '{}/conala_test_brio.json'.format(data_dir)
     elif task == 'summarize':
         data_dir = '{}/{}/{}'.format(data_root, task, sub_task)
         train_fn = '{}/train.jsonl'.format(data_dir)
@@ -159,6 +163,7 @@ def read_examples(filename, data_num, task):
         'translate': read_translate_examples,
         'concode': read_concode_examples,
         'conala': read_conala_examples,
+        'conala_brio': read_conala_brio_examples,
         'clone': read_clone_examples,
         'defect': read_defect_examples,
     }

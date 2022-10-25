@@ -27,6 +27,7 @@ import numpy as np
 from tqdm import tqdm
 import multiprocessing
 import time
+import wandb
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -37,6 +38,7 @@ from models import build_or_load_gen_model
 from evaluator import smooth_bleu
 from evaluator.CodeBLEU import calc_code_bleu
 from evaluator.bleu import _bleu
+from label_smoothing_loss import label_smoothing_loss
 from utils import get_filenames, get_elapse_time, load_and_cache_gen_data
 from configs import add_args, set_seed, set_dist
 
@@ -46,7 +48,37 @@ logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message
 logger = logging.getLogger(__name__)
 
 
-def eval_ppl_epoch(args, eval_data, eval_examples, model, tokenizer):
+def RankingLoss(score, summary_score=None, margin=0, gold_margin=0, gold_weight=1, no_gold=False, no_cand=False):
+    # init margin loss in order to do incremental adding
+    ones = torch.ones_like(score)
+    loss_func = torch.nn.MarginRankingLoss(0.0)
+    TotalLoss = loss_func(score, score, ones)
+    # candidate loss
+    n = score.size(1)
+    if not no_cand:
+        for i in range(1, n):
+            pos_score = score[:, :-i]
+            neg_score = score[:, i:]
+            pos_score = pos_score.contiguous().view(-1)
+            neg_score = neg_score.contiguous().view(-1)
+            ones = torch.ones_like(pos_score)
+            loss_func = torch.nn.MarginRankingLoss(margin * i)
+            loss = loss_func(pos_score, neg_score, ones)
+            TotalLoss += loss
+    if no_gold:
+        return TotalLoss
+    # gold summary loss
+    pos_score = summary_score.unsqueeze(-1).expand_as(score)
+    neg_score = score
+    pos_score = pos_score.contiguous().view(-1)
+    neg_score = neg_score.contiguous().view(-1)
+    ones = torch.ones_like(pos_score)
+    loss_func = torch.nn.MarginRankingLoss(gold_margin)
+    TotalLoss += gold_weight * loss_func(pos_score, neg_score, ones)
+    return TotalLoss
+
+
+def eval_ppl_epoch(args, eval_data, eval_examples, model, tokenizer, global_step):
     eval_sampler = SequentialSampler(eval_data)
     eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size,
                                  num_workers=4, pin_memory=True)
@@ -68,18 +100,138 @@ def eval_ppl_epoch(args, eval_data, eval_examples, model, tokenizer):
                 loss, _, _ = model(source_ids=source_ids, source_mask=source_mask,
                                    target_ids=target_ids, target_mask=target_mask)
             else:
-                outputs = model(input_ids=source_ids, attention_mask=source_mask,
-                                labels=target_ids, decoder_attention_mask=target_mask)
+                if args.task == 'conala_brio':
+                    model.generation_mode()
+                    outputs = model(input_ids=source_ids, attention_mask=source_mask,
+                    labels=target_ids[:, 0].contiguous(), decoder_attention_mask=target_mask[:, 0].contiguous())
+                else:
+                    outputs = model(input_ids=source_ids, attention_mask=source_mask,
+                                    labels=target_ids, decoder_attention_mask=target_mask)
                 loss = outputs.loss
 
         eval_loss += loss.item()
         batch_num += 1
     eval_loss = eval_loss / batch_num
     eval_ppl = round(np.exp(eval_loss), 5)
+    wandb.log({'eval_ppl': eval_ppl, 'step': global_step})
     return eval_ppl
 
+def eval_bleu_epoch_for_scoring(args, eval_data, eval_examples, model, tokenizer, split_tag, criteria, global_step):
+    if args.task != 'conala_brio':
+        result = {'em': 0, 'bleu': 0}
+        return result
+    else:
+        logger.info("  ***** Running bleu evaluation for scoring on {} data*****".format(split_tag))
+        logger.info("  Num examples = %d", len(eval_examples))
+        logger.info("  Batch size = %d", args.eval_batch_size)
+        eval_sampler = SequentialSampler(eval_data)
+        if args.data_num == -1:
+            eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size,
+                                        num_workers=4, pin_memory=True)
+        else:
+            eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
 
-def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag, criteria):
+        model.eval()
+        pred_ids = []
+        bleu, codebleu = 0.0, 0.0
+        for batch in tqdm(eval_dataloader, total=len(eval_dataloader), desc="Eval bleu for {} set".format(split_tag)):
+            import pdb; pdb.set_trace()
+            source_ids = batch[0].to(args.device)
+            target_ids = batch[1].to(args.device)
+            source_mask = source_ids.ne(tokenizer.pad_token_id)
+            target_mask = target_ids.ne(tokenizer.pad_token_id)
+            with torch.no_grad():
+                if args.model_type == 'roberta':
+                    preds = model(source_ids=source_ids, source_mask=source_mask)
+
+                    top_preds = [pred[0].cpu().numpy() for pred in preds]
+                else:
+                    model.scoring_mode()
+                    bsz = source_ids.size(0)
+                    outputs = model(input_ids=source_ids, attention_mask=source_mask,
+                                    labels=target_ids, decoder_attention_mask=target_mask)
+                    candidate_ids = target_ids  # shift right
+                    cand_mask = candidate_ids != tokenizer.pad_token_id
+                    candidate_ids = candidate_ids.unsqueeze(-1)
+                    logits = outputs["logits"]
+                    logits = logits.view(bsz, -1, logits.size(1), logits.size(2))
+                    scores = torch.gather(logits, 3, candidate_ids).squeeze(-1)  # [bz, cand_num, seq_len]
+                    cand_mask = cand_mask.float()
+                    scores = torch.mul(scores, cand_mask).sum(-1) / ((cand_mask.sum(-1) + args.adding) ** args.length_penalty) # [bz, cand_num]
+                    score = scores[:, 1:]
+                    similarity = score
+                    similarity = similarity.cpu().numpy()
+                    max_ids = similarity.argmax(1)
+
+                    candidates = target_ids[:, 1:, :]
+
+                    preds = None
+                    for j in range(similarity.shape[0]):
+                        sent = candidates[j, max_ids[j]]
+                        if preds is None:
+                            preds = sent.unsqueeze(dim=0)
+                        else:
+                            preds = torch.cat([preds, sent.unsqueeze(dim=0)], dim=0)
+                    top_preds = list(preds.cpu().numpy())
+                pred_ids.extend(top_preds)
+
+        pred_nls = [tokenizer.decode(id, skip_special_tokens=True, clean_up_tokenization_spaces=False) for id in pred_ids]
+
+        output_fn = os.path.join(args.res_dir, "test_{}.output".format(criteria))
+        gold_fn = os.path.join(args.res_dir, "test_{}.gold".format(criteria))
+        src_fn = os.path.join(args.res_dir, "test_{}.src".format(criteria))
+
+        if args.task in ['defect']:
+            target_dict = {0: 'false', 1: 'true'}
+            golds = [target_dict[ex.target] for ex in eval_examples]
+            eval_acc = np.mean([int(p == g) for p, g in zip(pred_nls, golds)])
+            result = {'em': eval_acc * 100, 'bleu': 0, 'codebleu': 0}
+
+            with open(output_fn, 'w') as f, open(gold_fn, 'w') as f1, open(src_fn, 'w') as f2:
+                for pred_nl, gold in zip(pred_nls, eval_examples):
+                    f.write(pred_nl.strip() + '\n')
+                    f1.write(target_dict[gold.target] + '\n')
+                    f2.write(gold.source.strip() + '\n')
+                logger.info("Save the predictions into %s", output_fn)
+        else:
+            dev_accs, predictions = [], []
+            with open(output_fn, 'w') as f, open(gold_fn, 'w') as f1, open(src_fn, 'w') as f2:
+                for pred_nl, gold in zip(pred_nls, eval_examples):
+                    pred_nl = pred_nl.replace('\n', ' ')
+                    gold.target = gold.target.replace('\n', ' ')
+                    dev_accs.append(pred_nl.strip() == gold.target.strip())
+                    if args.task in ['summarize']:
+                        predictions.append(str(gold.idx) + '\t' + pred_nl)
+                        f.write(str(gold.idx) + '\t' + pred_nl.strip() + '\n')
+                        f1.write(str(gold.idx) + '\t' + gold.target.strip() + '\n')
+                        f2.write(str(gold.idx) + '\t' + gold.source.strip() + '\n')
+                    else:
+                        f.write(pred_nl.strip() + '\n')
+                        f1.write(gold.target.strip() + '\n')
+                        f2.write(gold.source.strip() + '\n')
+
+            if args.task == 'summarize':
+                (goldMap, predictionMap) = smooth_bleu.computeMaps(predictions, gold_fn)
+                bleu = round(smooth_bleu.bleuFromMaps(goldMap, predictionMap)[0], 2)
+            elif args.task == 'conala' or args.task == 'conala_brio':
+                bleu = round(_bleu(gold_fn, output_fn, smooth=False, code_tokenize=True), 2)
+            else:
+                bleu = round(_bleu(gold_fn, output_fn), 2)
+                if args.task in ['concode', 'translate', 'refine']:
+                    codebleu = calc_code_bleu.get_codebleu(gold_fn, output_fn, args.lang)
+
+            result = {'em': np.mean(dev_accs) * 100, 'bleu': bleu}
+            if args.task == 'concode':
+                result['codebleu'] = codebleu * 100
+
+        logger.info("***** Eval results *****")
+        for key in sorted(result.keys()):
+            logger.info("  %s = %s", key, str(round(result[key], 4)))
+
+        return result
+
+
+def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag, criteria, global_step):
     logger.info("  ***** Running bleu evaluation on {} data*****".format(split_tag))
     logger.info("  Num examples = %d", len(eval_examples))
     logger.info("  Batch size = %d", args.eval_batch_size)
@@ -102,6 +254,8 @@ def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag,
 
                 top_preds = [pred[0].cpu().numpy() for pred in preds]
             else:
+                if args.task == 'conala_brio':
+                    model.generation_mode()
                 preds = model.generate(source_ids,
                                        attention_mask=source_mask,
                                        use_cache=True,
@@ -149,7 +303,7 @@ def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag,
         if args.task == 'summarize':
             (goldMap, predictionMap) = smooth_bleu.computeMaps(predictions, gold_fn)
             bleu = round(smooth_bleu.bleuFromMaps(goldMap, predictionMap)[0], 2)
-        elif args.task == 'conala':
+        elif args.task == 'conala' or args.task == 'conala_brio':
             bleu = round(_bleu(gold_fn, output_fn, smooth=False, code_tokenize=True), 2)
         else:
             bleu = round(_bleu(gold_fn, output_fn), 2)
@@ -168,6 +322,15 @@ def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag,
 
 
 def main():
+    os.environ['EXP_NUM'] = 'codet5'
+    os.environ['WANDB_NAME'] = time.strftime(
+        '%Y-%m-%d %H:%M:%S', 
+        time.localtime(int(round(time.time()*1000))/1000)
+    )
+    os.environ['WANDB_API_KEY'] = '972035264241fb0f6cc3cab51a5d82f47ca713db'
+    os.environ['WANDB_DIR'] = '../codet5_tmp'
+    wandb.init(project="CodeT5")
+
     parser = argparse.ArgumentParser()
     args = add_args(parser)
     logger.info(args)
@@ -230,13 +393,84 @@ def main():
                 source_mask = source_ids.ne(tokenizer.pad_token_id)
                 target_mask = target_ids.ne(tokenizer.pad_token_id)
 
+                # ====== just to fasten debugging ======
+                '''
+                if args.do_eval:
+                    # Eval model with dev dataset
+                    if 'dev_loss' in dev_dataset:
+                        eval_examples, eval_data = dev_dataset['dev_loss']
+                    else:
+                        eval_examples, eval_data = load_and_cache_gen_data(args, args.dev_filename, pool, tokenizer, 'dev')
+                        dev_dataset['dev_loss'] = eval_examples, eval_data
+                    if args.task == 'conala_brio':
+                        brio_scoring_result = eval_bleu_epoch_for_scoring(args, eval_data, eval_examples, model, tokenizer, 'dev', 'e%d' % cur_epoch, global_step)
+                        dev_brio_bleu, dev_brio_em = brio_scoring_result['bleu'], brio_scoring_result['em']
+                        wandb.log({'dev_brio_bleu': dev_brio_bleu, 'step': global_step})
+                        wandb.log({'dev_brio_em': dev_brio_em, 'step': global_step})
+                '''
+                # =======================================
+
                 if args.model_type == 'roberta':
                     loss, _, _ = model(source_ids=source_ids, source_mask=source_mask,
                                        target_ids=target_ids, target_mask=target_mask)
                 else:
-                    outputs = model(input_ids=source_ids, attention_mask=source_mask,
-                                    labels=target_ids, decoder_attention_mask=target_mask)
-                    loss = outputs.loss
+                    if args.task == 'conala_brio':
+                        model.scoring_mode()
+                        bsz = source_ids.size(0)
+
+                        outputs = model(input_ids=source_ids, attention_mask=source_mask,
+                                        labels=target_ids, decoder_attention_mask=target_mask)
+
+                        # MLE loss construction
+                        if args.ce_smooth > 0:
+                            mle_fn = label_smoothing_loss(ignore_index=tokenizer.pad_token_id, epsilon=args.ce_smooth)
+                        else:
+                            mle_fn = torch.nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
+
+                        logits = outputs["logits"]
+                        logits = logits.view(bsz, -1, logits.size(1), logits.size(2))
+                        lm_logits = logits[:, 0]
+                        labels = target_ids[:, 0]
+                        mle_loss = mle_fn(lm_logits.contiguous().view(-1, lm_logits.size(-1)), labels.contiguous().view(-1))
+                        wandb.log({'mle_loss': mle_loss, 'step': global_step})
+
+                        # RANK loss construction
+                        candidate_ids = target_ids  # shift right
+                        cand_mask = candidate_ids != tokenizer.pad_token_id
+                        candidate_ids = candidate_ids.unsqueeze(-1)
+                        if args.normalize:
+                            if args.score_mode == "log":
+                                _output = torch.nn.functional.log_softmax(logits, dim=3)
+                            else:
+                                _output = torch.nn.functional.softmax(logits, dim=3)
+                            scores = torch.gather(_output, 3, candidate_ids).squeeze(-1)  # [bz, cand_num, seq_len]
+                        else:
+                            scores = torch.gather(logits, 3, candidate_ids).squeeze(-1)  # [bz, cand_num, seq_len]
+
+                        cand_mask = cand_mask.float()
+                        scores = torch.mul(scores, cand_mask).sum(-1) / ((cand_mask.sum(-1) + args.adding) ** args.length_penalty) # [bz, cand_num]
+                        score = scores[:, 1:]
+                        summary_score = scores[:, 0]
+
+                        similarity = score * args.scale
+                        gold_similarity = summary_score * args.scale
+                        ranking_loss = RankingLoss(similarity, gold_similarity, args.margin, args.gold_margin, args.gold_weight)
+                        wandb.log({'ranking_loss': ranking_loss, 'step': global_step})
+
+                        # TOTAL loss construction 
+                        loss = args.ranking_weight * ranking_loss + args.generation_weight * mle_loss
+                        #loss = mle_loss
+                        wandb.log({'scaled_ranking_loss': args.ranking_weight * ranking_loss, 'step': global_step})
+                        wandb.log({'scaled_generation_loss': args.generation_weight * mle_loss, 'step': global_step})
+                        wandb.log({'total_loss': loss, 'step': global_step})
+                    else:
+                        outputs = model(input_ids=source_ids, attention_mask=source_mask,
+                                        labels=target_ids, decoder_attention_mask=target_mask)
+                        loss_fct = torch.nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
+                        lm_logits = outputs["logits"]
+                        labels = target_ids
+                        loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
+                        wandb.log({'mle_loss': loss, 'step': global_step})
 
                 if args.n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu.
@@ -265,7 +499,7 @@ def main():
                     eval_examples, eval_data = load_and_cache_gen_data(args, args.dev_filename, pool, tokenizer, 'dev')
                     dev_dataset['dev_loss'] = eval_examples, eval_data
 
-                eval_ppl = eval_ppl_epoch(args, eval_data, eval_examples, model, tokenizer)
+                eval_ppl = eval_ppl_epoch(args, eval_data, eval_examples, model, tokenizer, global_step)
                 result = {'epoch': cur_epoch, 'global_step': global_step, 'eval_ppl': eval_ppl}
                 for key in sorted(result.keys()):
                     logger.info("  %s = %s", key, str(result[key]))
@@ -311,11 +545,22 @@ def main():
                 logger.info("***** CUDA.empty_cache() *****")
                 torch.cuda.empty_cache()
                 if args.do_eval_bleu:
+                    if args.task == 'conala_brio':
+                        eval_examples, eval_data = load_and_cache_gen_data(args, args.dev_filename, pool, tokenizer, 'dev', is_sample=True)
+                        brio_scoring_result = eval_bleu_epoch_for_scoring(args, eval_data, eval_examples, model, tokenizer, 'dev', 'e%d' % cur_epoch, global_step)
+                        dev_brio_bleu, dev_brio_em = brio_scoring_result['bleu'], brio_scoring_result['em']
+                        wandb.log({'dev_brio_bleu': dev_brio_bleu, 'step': global_step})
+                        wandb.log({'dev_brio_em': dev_brio_em, 'step': global_step})
+
                     eval_examples, eval_data = load_and_cache_gen_data(args, args.dev_filename, pool, tokenizer, 'dev',
                                                                        only_src=True, is_sample=True)
 
-                    result = eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, 'dev', 'e%d' % cur_epoch)
+                    result = eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, 'dev', 'e%d' % cur_epoch, global_step)
+
                     dev_bleu, dev_em = result['bleu'], result['em']
+                    wandb.log({'dev_bleu': dev_bleu, 'step': global_step})
+                    wandb.log({'dev_em': dev_em, 'step': global_step})
+
                     if args.task in ['summarize']:
                         dev_bleu_em = dev_bleu
                     elif args.task in ['defect']:

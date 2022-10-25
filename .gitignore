@@ -1,1 +1,11 @@
 .idea
+sh/results/
+sh/saved_models/
+sh/tensorboard/
+data/
+__pycache__/
+evaluator/CodeBLEU/__pycache__/
+evaluator/CodeBLEU/parser/__pycache__/
+evaluator/__pycache__/
+codet5_tmp/
+*.txt

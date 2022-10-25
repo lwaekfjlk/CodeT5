@@ -1,4 +1,4 @@
-WORKDIR="/home/fangzhex/md/projects/CodeT5"
+WORKDIR="/home/haofeiy/CodeGen/origin_codet5/CodeT5"
 export PYTHONPATH=$WORKDIR
 
 TASK=${1}
@@ -55,8 +55,16 @@ elif [[ $MODEL_TAG == codet5_small ]]; then
   MODEL_TYPE=codet5
   TOKENIZER=Salesforce/codet5-small
   MODEL_PATH=Salesforce/codet5-small
+elif [[ $MODEL_TAG == codet5_small_brio ]]; then
+  MODEL_TYPE=codet5_brio
+  TOKENIZER=Salesforce/codet5-small
+  MODEL_PATH=Salesforce/codet5-small
 elif [[ $MODEL_TAG == codet5_base ]]; then
   MODEL_TYPE=codet5
+  TOKENIZER=Salesforce/codet5-base
+  MODEL_PATH=Salesforce/codet5-base
+elif [[ $MODEL_TAG == codet5_base_brio ]]; then
+  MODEL_TYPE=codet5_brio
   TOKENIZER=Salesforce/codet5-base
   MODEL_PATH=Salesforce/codet5-base
 fi

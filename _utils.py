@@ -1,4 +1,5 @@
 import json
+import jsonlines
 
 
 def add_lang_by_task(target_str, task, sub_task):
@@ -48,9 +49,25 @@ def convert_examples_to_features(item):
             else:
                 raise NameError
         target_str = target_str.replace('</s>', '<unk>')
-        target_ids = tokenizer.encode(target_str, max_length=args.max_target_length, padding='max_length',
+        if args.task == 'conala_brio':
+            target_strs = []
+            target_strs.append(target_str)
+            candidates = [candidate.strip() for candidate in example.candidates]
+            metrics = example.metrics
+            candidates = [cand for _, cand in sorted(zip(metrics, candidates), reverse=True)]
+            sorted_metrics = [metric for metric, _ in sorted(zip(metrics, candidates), reverse=True)]
+            target_strs += candidates
+            target_ids = []
+            for target_str in target_strs:
+                target_id = tokenizer.encode(target_str, max_length=args.max_target_length, padding='max_length',
+                                        truncation=True)
+                target_ids.append(target_id)
+            for target_id in target_ids:
+                assert target_id.count(tokenizer.eos_token_id) == 1
+        else:
+            target_ids = tokenizer.encode(target_str, max_length=args.max_target_length, padding='max_length',
                                       truncation=True)
-        assert target_ids.count(tokenizer.eos_token_id) == 1
+            assert target_ids.count(tokenizer.eos_token_id) == 1
 
     return InputFeatures(
         example_index,
@@ -164,6 +181,26 @@ class CloneExample(object):
         self.url1 = url1
         self.url2 = url2
 
+class BRIOExample(object):
+    def __init__(self,
+                 idx,
+                 source,
+                 target,
+                 candidates,
+                 metrics,
+                 url=None,
+                 task='',
+                 sub_task=''
+                 ):
+        self.idx = idx 
+        self.source = source
+        self.target = target
+        self.candidates = candidates
+        self.metrics = metrics
+        self.url = url 
+        self.task = task
+        self.sub_task = sub_task
+
 
 def read_translate_examples(filename, data_num):
     """Read examples from filename."""
@@ -235,15 +272,34 @@ def read_concode_examples(filename, data_num):
 def read_conala_examples(filename, data_num):
     """Read examples from conala filename."""
     examples = []
-
-    with open(filename) as f:
-        data_dict = json.load(f)
+    with jsonlines.open(filename, 'r') as f:
+        data_dict = [obj for obj in f]
         for idx, ex in enumerate(data_dict):
             examples.append(
                 Example(
                     idx=idx,
                     source=ex["rewritten_intent"].strip() if ex["rewritten_intent"] else ex['intent'].strip(),
-                    target=ex["snippet"].strip()
+                    target=ex["snippet"].strip(),
+                )
+            )
+            idx += 1
+            if idx == data_num:
+                break
+    return examples
+
+def read_conala_brio_examples(filename, data_num):
+    """Read examples from conala brio filename."""
+    examples = []
+    with jsonlines.open(filename, 'r') as f:
+        data_dict = [obj for obj in f]
+        for idx, ex in enumerate(data_dict):
+            examples.append(
+                BRIOExample(
+                    idx=idx,
+                    source=ex["rewritten_intent"].strip() if ex["rewritten_intent"] else ex['intent'].strip(),
+                    target=ex["snippet"].strip(),
+                    candidates=[candidate[0] for candidate in ex["candidates"]],
+                    metrics=[candidate[1] for candidate in ex["candidates"]],
                 )
             )
             idx += 1

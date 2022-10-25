@@ -153,9 +153,31 @@ def _bleu(ref_file, trans_file, subword_option=None, smooth=True, code_tokenize=
                 translations.append(tokenize_for_bleu_eval(line.strip()))
             else:
                 translations.append(line.strip().split())
+
     bleu_score, _, _, _, _, _ = compute_bleu(per_segment_references, translations, max_order, smooth)
     return round(100 * bleu_score, 2)
 
+
+def _bleu_without_file(refs, trans, subword_option=None, smooth=True, code_tokenize=False):
+    max_order = 4
+
+    per_segment_references = []
+    for line in refs:
+        if code_tokenize:
+            per_segment_references.append(tokenize_for_bleu_eval(line.strip()))
+        else:
+            per_segment_references.append(line.strip().split())
+
+    translations = []
+    for line in trans:
+        if code_tokenize:
+            translations.append(tokenize_for_bleu_eval(line.strip()))
+        else:
+            translations.append(line.strip().split())
+
+    import pdb; pdb.set_trace() 
+    _, _, bp, _, _, _ = compute_bleu(per_segment_references, translations, max_order, smooth)
+    return round(100 * bp, 2)
 
 if __name__ == '__main__':
     score = _bleu(

@@ -57,6 +57,13 @@ def get_args_by_task_model(task, sub_task, model_tag):
         trg_len = 100
         epoch = 30
         patience = 3
+    elif task == 'conala_brio':
+        # Read 2379 examples, avg src len: 10, avg trg len: 4, max src len: 32, max trg len: 29
+        # [TOKENIZE] avg src len: 15, avg trg len: 16, max src len: 62, max trg len: 84
+        src_len = 60
+        trg_len = 100
+        epoch = 30
+        patience = 3
     elif task == 'defect':
         # Read 21854 examples, avg src len: 187, avg trg len: 1, max src len: 12195, max trg len: 1
         # [TOKENIZE] avg src len: 597, avg trg len: 1, max src len: 41447, max trg len: 1
@@ -73,7 +80,10 @@ def get_args_by_task_model(task, sub_task, model_tag):
         patience = 2
 
     if 'codet5_small' in model_tag:
-        bs = 32
+        if 'codet5_small_brio' in model_tag:
+            bs = 4
+        else:
+            bs = 4
         if task == 'summarize' or task == 'translate' or (task == 'refine' and sub_task == 'small'):
             bs = 64
         elif task == 'clone':
@@ -92,7 +102,7 @@ def get_args_by_task_model(task, sub_task, model_tag):
     lr = 5
     if task == 'concode':
         lr = 10
-    elif task == 'conala':
+    elif task == 'conala' or task == 'conala_brio':
         lr = 5
     elif task == 'defect':
         lr = 2
@@ -118,7 +128,7 @@ def get_sub_tasks(task):
         sub_tasks = ['java-cs', 'cs-java']
     elif task == 'refine':
         sub_tasks = ['small', 'medium']
-    elif task in ['concode', 'defect', 'clone', 'conala']:
+    elif task in ['concode', 'defect', 'clone', 'conala', 'conala_brio']:
         sub_tasks = ['none']
     return sub_tasks
 
@@ -126,8 +136,8 @@ def get_sub_tasks(task):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_tag", type=str, default='codet5_small',
-                        choices=['roberta', 'codebert', 'bart_base', 'codet5_small', 'codet5_base'])
-    parser.add_argument("--task", type=str, default='summarize', choices=['summarize', 'concode', 'conala', 'translate',
+                        choices=['roberta', 'codebert', 'bart_base', 'codet5_small', 'codet5_base', 'codet5_small_brio', 'codet5_base_brio'])
+    parser.add_argument("--task", type=str, default='summarize', choices=['summarize', 'concode', 'conala', 'conala_brio', 'translate',
                                                                           'refine', 'defect', 'clone'])
     parser.add_argument("--sub_task", type=str, default='ruby')
     parser.add_argument("--res_dir", type=str, default='results', help='directory to save fine-tuning results')

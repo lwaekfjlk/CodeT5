@@ -5,12 +5,14 @@ from transformers import (RobertaConfig, RobertaModel, RobertaTokenizer,
                           BartConfig, BartForConditionalGeneration, BartTokenizer,
                           T5Config, T5ForConditionalGeneration, T5Tokenizer)
 import logging
+from modeling_t5 import T5Scorer
 
 logger = logging.getLogger(__name__)
 
 MODEL_CLASSES = {'roberta': (RobertaConfig, RobertaModel, RobertaTokenizer),
                  't5': (T5Config, T5ForConditionalGeneration, T5Tokenizer),
                  'codet5': (T5Config, T5ForConditionalGeneration, RobertaTokenizer),
+                 'codet5_brio': (T5Config, T5Scorer, RobertaTokenizer),
                  'bart': (BartConfig, BartForConditionalGeneration, BartTokenizer)}
 
 
