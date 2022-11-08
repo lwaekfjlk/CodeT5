@@ -8,6 +8,7 @@ class label_smoothing_loss(nn.Module):
         self.epsilon = epsilon
 
     def forward(self, input, target):
+        import pdb; pdb.set_trace()
         input = input.transpose(1, 2) # [batch_size, seq_len, word_num]
         input = torch.log_softmax(input, dim=2)
         k = input.size(2)

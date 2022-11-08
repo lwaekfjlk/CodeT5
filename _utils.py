@@ -1,5 +1,6 @@
 import json
 import jsonlines
+import random
 
 
 def add_lang_by_task(target_str, task, sub_task):
@@ -55,8 +56,10 @@ def convert_examples_to_features(item):
             candidates = [candidate.strip() for candidate in example.candidates]
             metrics = example.metrics
             candidates = [cand for _, cand in sorted(zip(metrics, candidates), reverse=True)]
+            random.shuffle(candidates)
             sorted_metrics = [metric for metric, _ in sorted(zip(metrics, candidates), reverse=True)]
             target_strs += candidates
+            target_strs = target_strs[:args.max_decoder_ids_num]
             target_ids = []
             for target_str in target_strs:
                 target_id = tokenizer.encode(target_str, max_length=args.max_target_length, padding='max_length',

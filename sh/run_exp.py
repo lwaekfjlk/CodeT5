@@ -102,8 +102,10 @@ def get_args_by_task_model(task, sub_task, model_tag):
     lr = 5
     if task == 'concode':
         lr = 10
-    elif task == 'conala' or task == 'conala_brio':
-        lr = 5
+    elif task == 'conala':
+        lr = 1
+    elif task == 'conala_brio':
+        lr = 1
     elif task == 'defect':
         lr = 2
     return bs, lr, src_len, trg_len, patience, epoch

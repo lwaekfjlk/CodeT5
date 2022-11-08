@@ -113,9 +113,9 @@ def get_filenames(data_root, task, sub_task, split=''):
         test_fn = '{}/conala-test.json'.format(data_dir)
     elif task == 'conala_brio':
         data_dir = '{}/{}'.format(data_root, task)
-        train_fn = '{}/conala_train_brio.json'.format(data_dir)
-        dev_fn = '{}/conala_test_brio.json'.format(data_dir)
-        test_fn = '{}/conala_test_brio.json'.format(data_dir)
+        train_fn = '{}/conala_train_brio_bleu4_2820_metric_bleuscore.json'.format(data_dir)
+        dev_fn = '{}/conala_test_brio_bleu4_2820_metric_bleuscore.json'.format(data_dir)
+        test_fn = '{}/conala_test_brio_bleu4_2820_metric_bleuscore.json'.format(data_dir)
     elif task == 'summarize':
         data_dir = '{}/{}/{}'.format(data_root, task, sub_task)
         train_fn = '{}/train.jsonl'.format(data_dir)

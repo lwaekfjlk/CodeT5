@@ -104,10 +104,14 @@ def eval_ppl_epoch(args, eval_data, eval_examples, model, tokenizer, global_step
                     model.generation_mode()
                     outputs = model(input_ids=source_ids, attention_mask=source_mask,
                     labels=target_ids[:, 0].contiguous(), decoder_attention_mask=target_mask[:, 0].contiguous())
+                    labels = target_ids[:, 0].contiguous()
                 else:
                     outputs = model(input_ids=source_ids, attention_mask=source_mask,
                                     labels=target_ids, decoder_attention_mask=target_mask)
-                loss = outputs.loss
+                    labels = target_ids
+                loss_fct = torch.nn.CrossEntropyLoss(ignore_index=tokenizer.pad_token_id)
+                lm_logits = outputs["logits"]
+                loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
         eval_loss += loss.item()
         batch_num += 1
@@ -135,7 +139,6 @@ def eval_bleu_epoch_for_scoring(args, eval_data, eval_examples, model, tokenizer
         pred_ids = []
         bleu, codebleu = 0.0, 0.0
         for batch in tqdm(eval_dataloader, total=len(eval_dataloader), desc="Eval bleu for {} set".format(split_tag)):
-            import pdb; pdb.set_trace()
             source_ids = batch[0].to(args.device)
             target_ids = batch[1].to(args.device)
             source_mask = source_ids.ne(tokenizer.pad_token_id)
@@ -487,6 +490,7 @@ def main():
                     optimizer.step()
                     optimizer.zero_grad()
                     scheduler.step()
+                    wandb.log({'learning_rate': scheduler.get_last_lr()[0], 'step': global_step})
                     global_step += 1
                     train_loss = round(tr_loss * args.gradient_accumulation_steps / (nb_tr_steps + 1), 4)
                     bar.set_description("[{}] Train loss {}".format(cur_epoch, round(train_loss, 3)))
@@ -551,6 +555,8 @@ def main():
                         dev_brio_bleu, dev_brio_em = brio_scoring_result['bleu'], brio_scoring_result['em']
                         wandb.log({'dev_brio_bleu': dev_brio_bleu, 'step': global_step})
                         wandb.log({'dev_brio_em': dev_brio_em, 'step': global_step})
+                        logger.info("***** CUDA.empty_cache() *****")
+                        torch.cuda.empty_cache()
 
                     eval_examples, eval_data = load_and_cache_gen_data(args, args.dev_filename, pool, tokenizer, 'dev',
                                                                        only_src=True, is_sample=True)
@@ -616,7 +622,7 @@ def main():
             model.load_state_dict(torch.load(file))
             eval_examples, eval_data = load_and_cache_gen_data(args, args.test_filename, pool, tokenizer, 'test',
                                                                only_src=True, is_sample=False)
-            result = eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, 'test', criteria)
+            result = eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, 'test', criteria, global_step)
             test_bleu, test_em = result['bleu'], result['em']
             test_codebleu = result['codebleu'] if 'codebleu' in result else 0
             result_str = "[%s] bleu-4: %.2f, em: %.4f, codebleu: %.4f\n" % (criteria, test_bleu, test_em, test_codebleu)

@@ -109,10 +109,10 @@ def add_args(parser):
     parser.add_argument("--scale", default=0.01, type=float)
     parser.add_argument("--margin", default=0.001, type=float)
     parser.add_argument("--gold_margin", default=0, type=float)
-    parser.add_argument("--gold_weight", default=0, type=float)
+    parser.add_argument("--gold_weight", default=1, type=float)
     parser.add_argument("--score_mode", default='log', type=str)
     parser.add_argument("--ce_smooth", default=0, type=float)
-
+    parser.add_argument("--max_decoder_ids_num", default=10, type=int)
     args = parser.parse_args()
 
     if args.task in ['summarize']:
@@ -125,15 +125,22 @@ def add_args(parser):
         args.lang = 'c_sharp' if args.sub_task == 'java-cs' else 'java'
     elif 'conala' in args.task:
         args.gradient_accumulation_steps = 8
-    elif 'brio' in args.task:
+
+    # separate hyper-paramter setting 
+    if 'brio' in args.task:
         args.gold_margin = 0
         args.margin = 0.001
         args.gold_weight = 0
         args.generation_weight = 0.1
-        args.ranking_weight = 10
-        args.scale = 0.1
-        args.ce_smooth = 0.1
-
+        args.ranking_weight = 0.2
+        args.scale = 1
+        args.ce_smooth = 0
+        args.normalize = True
+        args.score_mode = 'log'
+        args.adding = 0
+        args.length_penalty = 1.0
+        args.max_decoder_ids_num = 12
+    
 
     args.load_model_path = '/home/haofeiy/CodeGen/origin_codet5/CodeT5/sh/saved_models/conala/codet5_small_all_lr5_bs4_src60_trg100_pat3_e30_saved/checkpoint-best-bleu/pytorch_model.bin'
     return args

@@ -35,12 +35,11 @@ def generate_codet5(args):
                     summaries = model.generate(
                         input_ids=dct["input_ids"].to(device),
                         attention_mask=dct["attention_mask"].to(device),
-                        num_return_sequences=128, num_beam_groups=16, diversity_penalty=0.1, num_beams=128,
-                        length_penalty=0.6,
-                        max_length=140,
+                        num_return_sequences=16, num_beams=16,
+                        max_length=32,
                     )
                     dec = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False) for g in summaries]
-                dec = [dec[i] for i in range(len(dec)) if i % 8 == 0]
+                assert len(dec) == 16
                 for hypothesis in dec:
                     hypothesis = hypothesis.replace("\n", " ")
                     fout.write(hypothesis + '\n')
@@ -57,12 +56,11 @@ def generate_codet5(args):
                 summaries = model.generate(
                     input_ids=dct["input_ids"].to(device),
                     attention_mask=dct["attention_mask"].to(device),
-                    num_return_sequences=128, num_beam_groups=16, diversity_penalty=0.1, num_beams=128,
-                    length_penalty=0.6,
-                    max_length=140,
+                    num_return_sequences=16, num_beams=16,
+                    max_length=32,
                 )
                 dec = [tokenizer.decode(g, skip_special_tokens=True, clean_up_tokenization_spaces=False) for g in summaries]
-            dec = [dec[i] for i in range(len(dec)) if i % 8 == 0]
+            assert len(dec) == 16
             for hypothesis in dec:
                 hypothesis = hypothesis.replace("\n", " ")
                 fout.write(hypothesis + '\n')
