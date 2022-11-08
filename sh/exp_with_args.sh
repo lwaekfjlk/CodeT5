@@ -1,4 +1,4 @@
-WORKDIR="/home/haofeiy/CodeGen/origin_codet5/CodeT5"
+WORKDIR="/projects/ogma3/haofeiy/directed_study"
 export PYTHONPATH=$WORKDIR
 
 TASK=${1}

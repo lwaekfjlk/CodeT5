@@ -123,8 +123,10 @@ def add_args(parser):
         args.lang = 'c'
     elif args.task == 'translate':
         args.lang = 'c_sharp' if args.sub_task == 'java-cs' else 'java'
-    elif 'conala' in args.task:
+    elif args.task == 'conala' or args.task == 'conala_brio':
+        args.lang = 'python'
         args.gradient_accumulation_steps = 8
+        
 
     # separate hyper-paramter setting 
     if 'brio' in args.task:
@@ -142,7 +144,7 @@ def add_args(parser):
         args.max_decoder_ids_num = 12
     
 
-    args.load_model_path = '/home/haofeiy/CodeGen/origin_codet5/CodeT5/sh/saved_models/conala/codet5_small_all_lr5_bs4_src60_trg100_pat3_e30_saved/checkpoint-best-bleu/pytorch_model.bin'
+    #args.load_model_path = '/projects/ogma3/haofeiy/directed_study/sh/saved_models/conala/codet5_small_all_lr5_bs4_src60_trg100_pat3_e30_saved/checkpoint-best-bleu/pytorch_model.bin'
     return args
 
 

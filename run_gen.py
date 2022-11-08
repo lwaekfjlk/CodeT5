@@ -308,13 +308,14 @@ def eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, split_tag,
             bleu = round(smooth_bleu.bleuFromMaps(goldMap, predictionMap)[0], 2)
         elif args.task == 'conala' or args.task == 'conala_brio':
             bleu = round(_bleu(gold_fn, output_fn, smooth=False, code_tokenize=True), 2)
+            codebleu = calc_code_bleu.get_codebleu(gold_fn, output_fn, args.lang) 
         else:
             bleu = round(_bleu(gold_fn, output_fn), 2)
             if args.task in ['concode', 'translate', 'refine']:
                 codebleu = calc_code_bleu.get_codebleu(gold_fn, output_fn, args.lang)
 
-        result = {'em': np.mean(dev_accs) * 100, 'bleu': bleu}
-        if args.task == 'concode':
+        result = {'em': np.mean(dev_accs) * 100, 'bleu': bleu, 'codebleu': codebleu}
+        if args.task == 'concode' or args.task == 'conala' or args.task == 'conala_brio':
             result['codebleu'] = codebleu * 100
 
     logger.info("***** Eval results *****")
@@ -563,9 +564,10 @@ def main():
 
                     result = eval_bleu_epoch(args, eval_data, eval_examples, model, tokenizer, 'dev', 'e%d' % cur_epoch, global_step)
 
-                    dev_bleu, dev_em = result['bleu'], result['em']
+                    dev_bleu, dev_em, dev_codebleu = result['bleu'], result['em'], result['codebleu']
                     wandb.log({'dev_bleu': dev_bleu, 'step': global_step})
                     wandb.log({'dev_em': dev_em, 'step': global_step})
+                    wandb.log({'dev_codebleu': dev_codebleu, 'step': global_step})
 
                     if args.task in ['summarize']:
                         dev_bleu_em = dev_bleu
